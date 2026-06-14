@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="description" content="Dispatch-style Claude Code launcher for Meta Ray-Ban Display glasses.">
+<meta name="mrbd-web-app-capable" content="yes">
+<meta name="viewport" content="width=600, height=600, initial-scale=1.0, user-scalable=no">
+<title>Claude Code · Dispatch</title>
+<style>
+  :root{--bg:#000;--ink:#f5e9df;--dim:#c79a73;--cc:#ff9e64;--cyan:#00d4ff;--green:#00ff9c;--red:#ff6b6b}
+  *{box-sizing:border-box;-webkit-user-select:none;user-select:none}
+  html,body{width:600px;height:600px;margin:0;overflow:hidden;background:var(--bg);color:var(--ink);
+    font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:20px;line-height:1.3}
+  #app{width:600px;height:600px;padding:16px;display:flex;flex-direction:column}
+  .screen{flex:1;display:flex;flex-direction:column;min-height:0}
+  .hidden{display:none!important}
+
+  /* header */
+  .hdr{display:flex;align-items:center;gap:8px;height:30px;flex:none;font-size:16px;color:var(--dim)}
+  .hdr .star{color:var(--cc);font-size:19px}
+  .hdr .nm{color:var(--ink)}
+  .dot{width:12px;height:12px;border-radius:50%;background:var(--dim);color:var(--dim);box-shadow:0 0 9px currentColor;margin-left:auto;flex:none}
+  .dot.thinking{background:var(--green);color:var(--green);animation:pulse 1s infinite}
+  .dot.done{background:var(--cc);color:var(--cc)} .dot.error{background:var(--red);color:var(--red)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+  /* welcome box (home) */
+  .box{border:1px solid var(--cc);border-radius:10px;padding:12px 14px;margin-top:10px;flex:none}
+  .box .t{color:var(--cc);font-size:21px}.box .s{color:var(--dim);font-size:16px;margin-top:3px}
+  .prompt{margin-top:14px;font-size:21px;color:var(--dim);flex:none}
+  .prompt b{color:var(--cc)}
+
+  /* menus / lists */
+  .list{display:flex;flex-direction:column;gap:9px;margin-top:14px;flex:none}
+  .item{min-height:62px;border-radius:12px;border:3px solid transparent;background:rgba(255,158,100,.08);
+    color:var(--ink);font-size:20px;display:flex;align-items:center;gap:12px;padding:0 16px;text-align:left;transition:all 120ms ease}
+  .item .ic{color:var(--cc);font-size:22px;flex:none;width:24px;text-align:center}
+  .item .sub{color:var(--dim);font-size:15px;margin-left:auto}
+  .item:focus{outline:none;border-color:var(--cc);box-shadow:0 0 18px rgba(255,158,100,.5);background:rgba(255,158,100,.18)}
+  .item.back{background:rgba(199,154,115,.1);min-height:48px}
+  .item.danger:focus{border-color:var(--red);box-shadow:0 0 18px rgba(255,107,107,.5)}
+  .scrolllist{overflow:hidden}
+
+  /* thread */
+  .thread{flex:1;margin-top:8px;overflow:hidden;white-space:pre-wrap;word-break:break-word;font-size:21px;min-height:0}
+  .ln{display:block}.ln.you{color:var(--cyan)}.ln.action{color:var(--green)}.ln.claude{color:var(--ink)}
+  .ln.resok{color:var(--cc)}.ln.reserr{color:var(--red)}.ln.cont{opacity:.9}
+  .empty{color:var(--dim);font-size:17px}
+  .pager{font-size:13px;color:var(--dim);height:16px;flex:none;text-align:right}
+  .row{display:flex;gap:8px;margin-top:8px;flex:none}
+  .row .item{flex:1;justify-content:center;padding:0 6px;font-size:17px;min-height:54px}
+
+  /* keyboard */
+  .compose{min-height:60px;border:2px solid var(--cc);border-radius:10px;padding:10px 12px;font-size:24px;
+    background:rgba(255,158,100,.06);overflow:hidden;white-space:pre-wrap;word-break:break-word;flex:none;margin-top:8px}
+  .caret{color:var(--cc)}
+  .kb{margin-top:auto;display:flex;flex-direction:column;gap:6px;flex:none}
+  .krow{display:flex;gap:5px;justify-content:center}
+  .key{flex:1;min-height:46px;border-radius:8px;border:3px solid transparent;background:rgba(255,158,100,.08);
+    font-size:21px;display:flex;align-items:center;justify-content:center;transition:all 100ms ease}
+  .key.focus{border-color:var(--cc);box-shadow:0 0 15px rgba(255,158,100,.55);background:rgba(255,158,100,.2)}
+  .key.wide{flex:2}.key.send{background:rgba(0,255,156,.12)}.key.send.focus{border-color:var(--green);box-shadow:0 0 15px rgba(0,255,156,.55)}
+
+  .hint{margin-top:7px;font-size:13px;color:var(--dim);text-align:center;height:15px;flex:none}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="hdr"><span class="star">✻</span><span>claude code</span><span>·</span>
+    <span class="nm" id="host">dispatch</span><span id="dot" class="dot"></span></div>
+
+  <!-- HOME -->
+  <div id="home" class="screen">
+    <div class="box"><div class="t">✻ Welcome back</div><div class="s" id="homeSub">connecting…</div></div>
+    <div class="prompt">&gt; <b>Describe a task or ask a question</b></div>
+    <div class="list">
+      <button class="item" id="goAsk"><span class="ic">⌨</span><span>New task or question</span></button>
+      <button class="item" id="goProjects"><span class="ic">▦</span><span>Projects</span><span class="sub" id="pCount"></span></button>
+      <button class="item" id="goRoutines"><span class="ic">⟳</span><span>Routines</span><span class="sub" id="rCount"></span></button>
+    </div>
+    <div class="list" id="homeStarters" style="margin-top:9px"></div>
+  </div>
+
+  <!-- THREAD -->
+  <div id="thread" class="screen hidden">
+    <div id="threadBody" class="thread empty"></div>
+    <div id="pager" class="pager"></div>
+    <div class="list" id="suggests"></div>
+    <div class="row">
+      <button class="item back" id="tBack"><span>‹ Home</span></button>
+      <button class="item" id="tType"><span>⌨ Type</span></button>
+      <button class="item danger hidden" id="tStop"><span>■ Stop</span></button>
+    </div>
+  </div>
+
+  <!-- PROJECTS -->
+  <div id="projects" class="screen hidden">
+    <div class="list"><button class="item back" id="pBack"><span>‹ Home</span></button></div>
+    <div class="list scrolllist" id="projList" style="margin-top:9px;overflow:hidden"></div>
+  </div>
+
+  <!-- ROUTINES -->
+  <div id="routines" class="screen hidden">
+    <div class="list"><button class="item back" id="rBack"><span>‹ Home</span></button></div>
+    <div class="list scrolllist" id="routList" style="margin-top:9px;overflow:hidden"></div>
+  </div>
+
+  <!-- KEYBOARD -->
+  <div id="kb" class="screen hidden">
+    <div id="compose" class="compose"><span class="caret">▌</span></div>
+    <div id="keys" class="kb"></div>
+  </div>
+
+  <div id="hint" class="hint">▲▼ choose · ⏎ select</div>
+</div>
+
+<script>
+(function(){
+  var DEFAULT_BRIDGE="ws://localhost:8787";
+  var params=new URLSearchParams(location.search);
+  var BRIDGE_URL=params.get("bridge")||localStorage.getItem("bridgeUrl")||DEFAULT_BRIDGE;
+
+  var state={status:"idle",host:"",activeProject:"",projects:[],routines:[],thread:[],suggestions:[],cost:null,sessionId:null};
+  var demo=false, ws=null, screen="home", page=0, follow=true, focusIdx=0;
+
+  var $=function(id){return document.getElementById(id);};
+  var dot=$("dot"),hostEl=$("host"),homeSub=$("homeSub"),pCount=$("pCount"),rCount=$("rCount"),
+      homeStarters=$("homeStarters"),threadBody=$("threadBody"),pager=$("pager"),suggests=$("suggests"),
+      projList=$("projList"),routList=$("routList"),compose=$("compose"),keys=$("keys"),hint=$("hint");
+
+  var SCREENS=["home","thread","projects","routines","kb"];
+  var HINTS={home:"▲▼ choose · ⏎ select",thread:"▲▼ choose · ◀▶ scroll · ⏎ select",
+    projects:"▲▼ choose · ⏎ open",routines:"▲▼ choose · ⏎ run",kb:"▲▼◀▶ move · ⏎ press"};
+
+  function show(s){screen=s;SCREENS.forEach(function(x){$(x).classList.toggle("hidden",x!==s);});
+    hint.textContent=HINTS[s];focusIdx=0;renderCurrent();}
+  function esc(s){return String(s).replace(/[&<>]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;"}[c];});}
+
+  function renderCurrent(){
+    dot.className="dot "+state.status;
+    hostEl.textContent=(state.host||"local");
+    if(screen==="home")renderHome();
+    else if(screen==="thread")renderThread();
+    else if(screen==="projects")renderProjects();
+    else if(screen==="routines")renderRoutines();
+    else if(screen==="kb")renderKeys();
+    refocus();
+  }
+  function refocus(){if(screen==="kb")return;var f=focusables();if(!f.length)return;
+    if(focusIdx>=f.length)focusIdx=f.length-1;if(focusIdx<0)focusIdx=0;f[focusIdx].focus();}
+  function focusables(){var sc=$(screen);return Array.prototype.slice.call(sc.querySelectorAll(".item:not(.hidden)"));}
+
+  // HOME
+  function renderHome(){
+    homeSub.textContent=(state.host||"local")+(state.activeProject?("  ·  "+state.activeProject):"");
+    pCount.textContent=state.projects.length?("("+state.projects.length+")"):"";
+    rCount.textContent=state.routines.length?("("+state.routines.length+")"):"";
+    var starters=["What's the status here?","What should I do next?"];
+    homeStarters.innerHTML="";
+    starters.forEach(function(s){var b=mkItem("›",s,"");b.addEventListener("click",function(){dispatch(s);});homeStarters.appendChild(b);});
+  }
+  function mkItem(ic,label,sub,cls){var b=document.createElement("button");b.className="item"+(cls?(" "+cls):"");
+    b.innerHTML='<span class="ic">'+esc(ic)+'</span><span>'+esc(label)+'</span>'+(sub?'<span class="sub">'+esc(sub)+'</span>':'');return b;}
+
+  // THREAD
+  var W=30,LPP=7,PFX={you:"› ",action:"● ",claude:"⏺ ",result:""};
+  function wrap(t){var words=String(t).replace(/\s+/g," ").trim().split(" "),out=[],cur="";
+    words.forEach(function(w){if((cur+" "+w).trim().length>W){out.push(cur.trim());cur=w;}else cur+=" "+w;});
+    if(cur.trim()||!out.length)out.push(cur.trim());return out;}
+  function buildLines(){var lines=[];state.thread.forEach(function(it){
+    var cls=it.kind==="result"?(/^x/.test(it.text)?"reserr":"resok"):it.kind;
+    wrap((PFX[it.kind]||"")+it.text).forEach(function(t,i){lines.push({t:i===0?t:"  "+t.replace(/^\s+/,""),cls:i===0?cls:"cont"});});});
+    return lines;}
+  function renderThread(){
+    var lines=buildLines(),pages=Math.max(1,Math.ceil(lines.length/LPP));
+    if(follow)page=pages-1;if(page>=pages)page=pages-1;if(page<0)page=0;
+    if(!lines.length){threadBody.className="thread empty";threadBody.textContent=state.status==="thinking"?"…":"Send a task to your computer.";}
+    else{threadBody.className="thread";threadBody.innerHTML=lines.slice(page*LPP,page*LPP+LPP)
+      .map(function(l){return '<span class="ln '+l.cls+'">'+esc(l.t)+'</span>';}).join("");}
+    pager.textContent=pages>1?(page+1)+"/"+pages:"";
+    var sugs=state.suggestions&&state.suggestions.length?state.suggestions:[];
+    suggests.innerHTML="";
+    sugs.forEach(function(s){var b=mkItem("›",s,"");b.addEventListener("click",function(){dispatch(s);});suggests.appendChild(b);});
+    $("tStop").classList.toggle("hidden",state.status!=="thinking");
+  }
+
+  // PROJECTS
+  function renderProjects(){projList.innerHTML="";
+    if(!state.projects.length){projList.appendChild(mkItem("·","No git projects found",""));return;}
+    state.projects.forEach(function(p){
+      var sub=[p.branch,p.last].filter(Boolean).join(" · ");
+      var b=mkItem("▦",p.name,sub,p.name===state.activeProject?"":"");
+      b.addEventListener("click",function(){send({type:"project",id:p.id});if(demo)demoProject(p);follow=true;show("thread");});
+      projList.appendChild(b);});}
+
+  // ROUTINES
+  function renderRoutines(){routList.innerHTML="";
+    if(!state.routines.length){routList.appendChild(mkItem("·","No routines configured",""));return;}
+    state.routines.forEach(function(r){var b=mkItem("⟳",r.name,"");
+      b.addEventListener("click",function(){send({type:"routine",id:r.id});if(demo)demoRoutine(r);follow=true;show("thread");});
+      routList.appendChild(b);});}
+
+  // KEYBOARD
+  var LAYOUT=[["q","w","e","r","t","y","u","i","o","p"],["a","s","d","f","g","h","j","k","l"],
+    ["z","x","c","v","b","n","m",".","?"],
+    [{l:"space",w:2,a:"space"},{l:"⌫",a:"del"},{l:"Send",a:"send",send:true},{l:"Close",a:"close"}]];
+  var kr=0,kc=0,composed="";
+  function renderKeys(){keys.innerHTML="";
+    LAYOUT.forEach(function(row,ri){var r=document.createElement("div");r.className="krow";
+      row.forEach(function(k,ci){var lbl=typeof k==="string"?k.toUpperCase():k.l;var b=document.createElement("button");
+        b.className="key"+(typeof k==="object"&&k.w?" wide":"")+(typeof k==="object"&&k.send?" send":"")+(ri===kr&&ci===kc?" focus":"");
+        b.textContent=lbl;b.addEventListener("click",function(){kr=ri;kc=ci;pressKey();});r.appendChild(b);});
+      keys.appendChild(r);});
+    compose.innerHTML=(composed?esc(composed):"")+'<span class="caret">▌</span>';}
+  function keyAt(r,c){var k=LAYOUT[r][c];return typeof k==="string"?{a:"char"}:k;}
+  function pressKey(){var k=keyAt(kr,kc),a=k.a;
+    if(a==="char")composed+=(typeof LAYOUT[kr][kc]==="string"?LAYOUT[kr][kc]:"");
+    else if(a==="space")composed+=" ";else if(a==="del")composed=composed.slice(0,-1);
+    else if(a==="send"){var t=composed.trim();composed="";if(t){follow=true;show("thread");dispatch(t);}else show("home");return;}
+    else if(a==="close"){composed="";show("home");return;}
+    renderKeys();}
+  function moveKey(dr,dc){kr=(kr+dr+LAYOUT.length)%LAYOUT.length;
+    if(kc>LAYOUT[kr].length-1)kc=LAYOUT[kr].length-1;kc=(kc+dc+LAYOUT[kr].length)%LAYOUT[kr].length;renderKeys();}
+
+  // input
+  document.addEventListener("keydown",function(e){
+    if(screen==="kb"){switch(e.key){
+      case "ArrowUp":moveKey(-1,0);break;case "ArrowDown":moveKey(1,0);break;
+      case "ArrowLeft":moveKey(0,-1);break;case "ArrowRight":moveKey(0,1);break;
+      case "Enter":pressKey();break;default:return;}e.preventDefault();return;}
+    var f=focusables();
+    switch(e.key){
+      case "ArrowUp":focusIdx=(focusIdx>0?focusIdx-1:f.length-1);refocus();break;
+      case "ArrowDown":focusIdx=(focusIdx<f.length-1?focusIdx+1:0);refocus();break;
+      case "ArrowLeft":if(screen==="thread"){follow=false;if(page>0){page--;renderThread();}}break;
+      case "ArrowRight":if(screen==="thread"){follow=false;page++;renderThread();}break;
+      case "Enter":if(f[focusIdx])f[focusIdx].click();break;
+      default:return;}
+    e.preventDefault();});
+
+  $("goAsk").addEventListener("click",function(){kr=0;kc=0;composed="";show("kb");});
+  $("goProjects").addEventListener("click",function(){show("projects");});
+  $("goRoutines").addEventListener("click",function(){show("routines");});
+  $("tBack").addEventListener("click",function(){show("home");});
+  $("tType").addEventListener("click",function(){kr=0;kc=0;composed="";show("kb");});
+  $("tStop").addEventListener("click",function(){send({type:"stop"});});
+  $("pBack").addEventListener("click",function(){show("home");});
+  $("rBack").addEventListener("click",function(){show("home");});
+
+  // transport
+  function send(o){if(demo){demoHandle(o);return;}if(ws&&ws.readyState===ws.OPEN)ws.send(JSON.stringify(o));}
+  function dispatch(text){follow=true;if(screen!=="thread")show("thread");send({type:"say",text:text});if(demo)demoSay(text);}
+
+  function connect(){try{ws=new WebSocket(BRIDGE_URL);}catch(e){startDemo();return;}
+    var settled=false,giveUp=setTimeout(function(){if(!settled){try{ws.close();}catch(_){}startDemo();}},1800);
+    ws.onopen=function(){settled=true;demo=false;clearTimeout(giveUp);localStorage.setItem("bridgeUrl",BRIDGE_URL);renderCurrent();};
+    ws.onmessage=function(ev){var m;try{m=JSON.parse(ev.data);}catch(_){return;}
+      if((m.type==="hello"||m.type==="state")&&m.state){state=m.state;renderCurrent();}};
+    ws.onclose=function(){if(settled&&!demo)setTimeout(connect,1500);};ws.onerror=function(){};}
+
+  // demo
+  function startDemo(){demo=true;state={status:"idle",host:"demo-mac",activeProject:"fundoria",
+    projects:[{id:"fundoria",name:"fundoria",branch:"main",last:"2 hours ago"},
+      {id:"career-lab-live",name:"career-lab-live",branch:"dev",last:"yesterday"},
+      {id:"fenny-pipeline",name:"fenny-pipeline",branch:"feat/tts",last:"3 days ago"}],
+    routines:[{id:"standup",name:"Daily standup"},{id:"tests",name:"Run tests"},{id:"review",name:"Review changes"},
+      {id:"deps",name:"Check dependencies"},{id:"next",name:"What's next?"}],
+    thread:[],suggestions:[],cost:null,sessionId:null};renderCurrent();}
+  function demoProject(p){state.activeProject=p.name;state.thread=[{kind:"action",text:"switched to "+p.name+" ("+p.branch+")"}];
+    state.suggestions=["What's the status?","What changed?","Run tests"];state.status="idle";}
+  function demoRoutine(r){state.thread.push({kind:"you",text:"> "+r.name});demoRun();}
+  function demoSay(text){state.thread.push({kind:"you",text:text});demoRun();}
+  function demoRun(){state.status="thinking";state.suggestions=[];renderCurrent();
+    var steps=[{d:600,f:function(){state.thread.push({kind:"action",text:"Bash  $ git log --oneline -5"});}},
+      {d:800,f:function(){state.thread.push({kind:"claude",text:"5 commits today on main. Tests green, nothing uncommitted."});}},
+      {d:400,f:function(){state.thread.push({kind:"result",text:"done  $0.012"});state.status="done";
+        state.suggestions=["Run the tests","Show the diff","What's next?"];}}];
+    var t=0;steps.forEach(function(s){t+=s.d;setTimeout(function(){s.f();follow=true;renderCurrent();},t);});}
+  function demoHandle(o){if(o.type==="stop"){state.status="idle";renderCurrent();}
+    else if(o.type==="reset"){state.thread=[];state.suggestions=[];state.status="idle";renderCurrent();}}
+
+  show("home");connect();
+})();
+</script>
+</body>
+</html>
